@@ -6,6 +6,43 @@ import shutil
 
 app = Flask(__name__)
 
+# Carregar a API Key do ambiente
+CLOUDCONVERT_API_KEY = os.environ.get('CLOUDCONVERT_API_KEY')
+
+# DEBUG: Ver se a chave foi carregada
+print("🔑 API KEY carregada:", bool(CLOUDCONVERT_API_KEY))  # Mostra True/False se foi carregada
+
+# Configurar o CloudConvert
+cloudconvert.configure(api_key=CLOUDCONVERT_API_KEY, sandbox=False)
+
+# Função de conversão com Debug
+def converter_pdf_cloudconvert(file_path):
+    print("🚀 A iniciar conversão para:", file_path)
+    try:
+        job = cloudconvert.Job.create(payload={
+            "tasks": {
+                "import-my-file": {
+                    "operation": "import/upload"
+                },
+                "convert-my-file": {
+                    "operation": "convert",
+                    "input": "import-my-file",
+                    "output_format": "jpg",  # Exemplo, pode mudar para png
+                    "engine": "office",
+                    "engine_version": "1.0"
+                },
+                "export-my-file": {
+                    "operation": "export/url",
+                    "input": "convert-my-file"
+                }
+            }
+        })
+        print("✅ Job criado:", job)  # Print do job para debug
+        return job
+    except Exception as e:
+        print("❌ Erro ao criar job:", str(e))  # Print de erro
+        return None
+
 # ⚠️ API KEY do CloudConvert
 CLOUDCONVERT_API_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxIiwianRpIjoiZmI2NDBjYmU0YmQ2YWIwZjE2MTQxMzI0NGVmOTI1ODZmOTZlMDRmMDYxMzI2Y2UxODM2NTM1ZTRjZmViNTI0ZDRmNTE1ODMwZmVkMmQzOTkiLCJpYXQiOjE3NDE3OTI0NzUuMzY4MTksIm5iZiI6MTc0MTc5MjQ3NS4zNjgxOTEsImV4cCI6NDg5NzQ2NjA3NS4zNjM0MjQsInN1YiI6IjcxMzEzMTg1Iiwic2NvcGVzIjpbInRhc2sucmVhZCIsInRhc2sud3JpdGUiXX0.PgcpeI7lQk9hegNbtYR4tq7anxEtXhgTWuXv9nBtFtVlxqzKuG_mqUpYLpFyrkJ_UJCy4PLQdVC6r99cWcgwrGdBb9XyduPETjNT4Mf1KId0qPMJaUaiAs32zBvuN_BRSQX2hgZAGITFctHyau_pDvdH5xqwDL1dwAUjM784xhhhurQhirAiNE71TSI_3ce-SU-yX5cZbbqos7_O5ot_U5HR1y5BbeJ1QxzXhcIekQppSner2rjwMQYB8ooCTLAzokFHScwK4QKU8o9SsOKrIzvdTscSROxmI2GEFxjGGilpDmd_6yntBRepnoDersmTKNbemTvhSpPh2Cw6kInqvz3InMOfNVdPyPb0DUP-SG8Seg_z8G9O9ldqy1Gp_-9rT-45govNkjeBdW-ZcNuF950-_bVA1pRriX8vHYJDpta7e8VWF7GOReEh3vnPZtqVOLDDcle5vX193OKkkrxu-TFisgUXl4nFHzefdD8Izx0E4cG2geS3nrd1ipZU9Ff1OkTDMuL0Qgzd1K2oLxRLaB7gtMyi1ElUVxXbBi9GjflJWAC5dIx22fxJ8a1wW4NyIh6UoFYr-s-KLSLpQRvQ9LUZYXChg8XpjMeQysYIQxTOBO_C-Wv4w02ESqRWtlE_sS1MJ4jueRq46DjP0BSRLJDpEuocZKuHj-_O7zZ29gQ'
 

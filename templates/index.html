@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversor de PDF</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+        img {
+            max-width: 200px;
+            margin-bottom: 20px;
+        }
+        input[type="file"] {
+            display: block;
+            margin: 10px auto;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .progress-container {
+            width: 100%;
+            background: #ddd;
+            border-radius: 5px;
+            margin-top: 15px;
+            display: none;
+        }
+        .progress-bar {
+            height: 10px;
+            width: 0%;
+            background: #007BFF;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="https://eposters.site/submissions/wp-content/uploads/2023/07/logo_eposters_efk.png" alt="Logo ePosters">
+        <h2>Conversor de PDF para Imagem</h2>
+        <form id="uploadForm" action="/" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" required>
+            <button type="submit">Converter</button>
+        </form>
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+    </div>
+    <script>
+        document.getElementById("uploadForm").addEventListener("submit", function() {
+            document.querySelector(".progress-container").style.display = "block";
+            let progressBar = document.getElementById("progressBar");
+            let width = 0;
+            let interval = setInterval(function() {
+                if (width >= 100) {
+                    clearInterval(interval);
+                } else {
+                    width += 10;
+                    progressBar.style.width = width + "%";
+                }
+            }, 500);
+        });
+    </script>
+</body>
+</html>

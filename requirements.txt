@@ -1,4 +1,5 @@
 Flask
 gunicorn
-pdf2image
-pillow
+cloudconvert
+Pillow
+requests

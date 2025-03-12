@@ -1,99 +1,96 @@
 import os
-import zipfile
+from flask import Flask, render_template, request, send_file, redirect, url_for
 import cloudconvert
-from flask import Flask, render_template, request, send_file
-from io import BytesIO
-from PIL import Image
-import requests
+import tempfile
+import shutil
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Configurar a API Key do CloudConvert (vai ser definida como variável no Render)
-API_KEY = os.environ.get('CLOUDCONVERT_API_KEY')
-cloudconvert.configure(api_key=API_KEY)
+# ⚠️ API KEY do CloudConvert
+CLOUDCONVERT_API_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxIiwianRpIjoiZmI2NDBjYmU0YmQ2YWIwZjE2MTQxMzI0NGVmOTI1ODZmOTZlMDRmMDYxMzI2Y2UxODM2NTM1ZTRjZmViNTI0ZDRmNTE1ODMwZmVkMmQzOTkiLCJpYXQiOjE3NDE3OTI0NzUuMzY4MTksIm5iZiI6MTc0MTc5MjQ3NS4zNjgxOTEsImV4cCI6NDg5NzQ2NjA3NS4zNjM0MjQsInN1YiI6IjcxMzEzMTg1Iiwic2NvcGVzIjpbInRhc2sucmVhZCIsInRhc2sud3JpdGUiXX0.PgcpeI7lQk9hegNbtYR4tq7anxEtXhgTWuXv9nBtFtVlxqzKuG_mqUpYLpFyrkJ_UJCy4PLQdVC6r99cWcgwrGdBb9XyduPETjNT4Mf1KId0qPMJaUaiAs32zBvuN_BRSQX2hgZAGITFctHyau_pDvdH5xqwDL1dwAUjM784xhhhurQhirAiNE71TSI_3ce-SU-yX5cZbbqos7_O5ot_U5HR1y5BbeJ1QxzXhcIekQppSner2rjwMQYB8ooCTLAzokFHScwK4QKU8o9SsOKrIzvdTscSROxmI2GEFxjGGilpDmd_6yntBRepnoDersmTKNbemTvhSpPh2Cw6kInqvz3InMOfNVdPyPb0DUP-SG8Seg_z8G9O9ldqy1Gp_-9rT-45govNkjeBdW-ZcNuF950-_bVA1pRriX8vHYJDpta7e8VWF7GOReEh3vnPZtqVOLDDcle5vX193OKkkrxu-TFisgUXl4nFHzefdD8Izx0E4cG2geS3nrd1ipZU9Ff1OkTDMuL0Qgzd1K2oLxRLaB7gtMyi1ElUVxXbBi9GjflJWAC5dIx22fxJ8a1wW4NyIh6UoFYr-s-KLSLpQRvQ9LUZYXChg8XpjMeQysYIQxTOBO_C-Wv4w02ESqRWtlE_sS1MJ4jueRq46DjP0BSRLJDpEuocZKuHj-_O7zZ29gQ'
 
+cloudconvert.configure(api_key=CLOUDCONVERT_API_KEY, sandbox=False)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        pdf_file = request.files['pdf']
+        if 'pdf_file' not in request.files:
+            return redirect(request.url)
+        pdf_file = request.files['pdf_file']
         if pdf_file.filename == '':
-            return 'Nenhum arquivo selecionado'
+            return redirect(request.url)
 
-        filename = os.path.splitext(pdf_file.filename)[0]
-        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf_file.filename)
-        pdf_file.save(pdf_path)
+        temp_dir = tempfile.mkdtemp()
+        input_pdf_path = os.path.join(temp_dir, pdf_file.filename)
+        pdf_file.save(input_pdf_path)
 
-        # Criar Job no CloudConvert
-        job = cloudconvert.Job.create(payload={
+        filename_without_ext = os.path.splitext(pdf_file.filename)[0]
+        output_dir = os.path.join(temp_dir, filename_without_ext)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Converte para PNG
+        job_png = cloudconvert.Job.create(payload={
             "tasks": {
-                "import-my-file": {
-                    "operation": "import/upload"
+                'import-my-file': {
+                    'operation': 'import/upload'
                 },
-                "convert-my-file": {
-                    "operation": "convert",
-                    "input": "import-my-file",
-                    "input_format": "pdf",
-                    "output_format": "png",
-                    "engine": "poppler",
-                    "output_format_options": {
-                        "density": 300
-                    }
+                'convert-my-file': {
+                    'operation': 'convert',
+                    'input': 'import-my-file',
+                    'output_format': 'png',
+                    'engine': 'office',
+                    'engine_version': '1.0'
                 },
-                "export-my-file": {
-                    "operation": "export/url",
-                    "input": "convert-my-file"
+                'export-my-file': {
+                    'operation': 'export/url',
+                    'input': 'convert-my-file'
                 }
             }
         })
 
-        # Enviar PDF para o CloudConvert
-        upload_task = job['tasks'][0]
-        upload_url = upload_task['result']['form']['url']
-        upload_params = upload_task['result']['form']['parameters']
+        upload_task_png = job_png['tasks'][0]
+        upload_url_png = upload_task_png['result']['form']['url']
+        cloudconvert.Task.upload(file_name=input_pdf_path, task=upload_task_png)
 
-        with open(pdf_path, 'rb') as file_data:
-            files = {'file': file_data}
-            requests.post(upload_url, data=upload_params, files=files)
+        job_png = cloudconvert.Job.wait(id=job_png['id'])
+        export_task_png = [task for task in job_png['tasks'] if task['name'] == 'export-my-file'][0]
+        file_url_png = export_task_png['result']['files'][0]['url']
 
-        # Aguardar fim da conversão
-        job = cloudconvert.Job.wait(id=job['id'])
-        export_task = [task for task in job['tasks'] if task['name'] == 'export-my-file'][0]
-        file_url = export_task['result']['files'][0]['url']
+        # Converte para JPG
+        job_jpg = cloudconvert.Job.create(payload={
+            "tasks": {
+                'import-my-file': {
+                    'operation': 'import/upload'
+                },
+                'convert-my-file': {
+                    'operation': 'convert',
+                    'input': 'import-my-file',
+                    'output_format': 'jpg',
+                    'engine': 'office',
+                    'engine_version': '1.0'
+                },
+                'export-my-file': {
+                    'operation': 'export/url',
+                    'input': 'convert-my-file'
+                }
+            }
+        })
 
-        # Download do PNG
-        response = requests.get(file_url)
-        png_image_bytes = response.content
+        upload_task_jpg = job_jpg['tasks'][0]
+        upload_url_jpg = upload_task_jpg['result']['form']['url']
+        cloudconvert.Task.upload(file_name=input_pdf_path, task=upload_task_jpg)
 
-        # Criar pasta ZIP com PNG + JPG
-        zip_buffer = BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-            # Nome do PNG
-            png_name = f"{filename}.png"
-            zip_file.writestr(f"{filename}/{png_name}", png_image_bytes)
+        job_jpg = cloudconvert.Job.wait(id=job_jpg['id'])
+        export_task_jpg = [task for task in job_jpg['tasks'] if task['name'] == 'export-my-file'][0]
+        file_url_jpg = export_task_jpg['result']['files'][0]['url']
 
-            # Gerar JPG (90px height)
-            image = Image.open(BytesIO(png_image_bytes)).convert("RGB")
-            width, height = image.size
-            new_width = int((90 / height) * width)
-            jpg_image = image.resize((new_width, 90))
-            jpg_buffer = BytesIO()
-            jpg_image.save(jpg_buffer, format="JPEG")
-            zip_file.writestr(f"{filename}/{filename}.jpg", jpg_buffer.getvalue())
-
-        zip_buffer.seek(0)
-
-        return send_file(
-            zip_buffer,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name=f"{filename}.zip"
-        )
+        shutil.rmtree(temp_dir)
+        
+        return render_template('index.html', file_url_png=file_url_png, file_url_jpg=file_url_jpg)
 
     return render_template('index.html')
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)

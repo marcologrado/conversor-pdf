@@ -1,133 +1,105 @@
 import os
-from flask import Flask, render_template, request, send_file, redirect, url_for
+from flask import Flask, render_template, request, send_file
 import cloudconvert
-import tempfile
-import shutil
+import time
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads'
 
-# Carregar a API Key do ambiente
-CLOUDCONVERT_API_KEY = os.environ.get('CLOUDCONVERT_API_KEY')
+# CloudConvert API KEY
+CLOUDCONVERT_API_KEY = os.getenv("CLOUDCONVERT_API_KEY")
+print(f"🔑 API KEY carregada: {bool(CLOUDCONVERT_API_KEY)}")
 
-# DEBUG: Ver se a chave foi carregada
-print("🔑 API KEY carregada:", bool(CLOUDCONVERT_API_KEY))  # Mostra True/False se foi carregada
-
-# Configurar o CloudConvert
-cloudconvert.configure(api_key=CLOUDCONVERT_API_KEY, sandbox=False)
-
-# Função de conversão com Debug
-def converter_pdf_cloudconvert(file_path):
-    print("🚀 A iniciar conversão para:", file_path)
-    try:
-        job = cloudconvert.Job.create(payload={
-            "tasks": {
-                "import-my-file": {
-                    "operation": "import/upload"
-                },
-                "convert-my-file": {
-                    "operation": "convert",
-                    "input": "import-my-file",
-                    "output_format": "jpg",  # Exemplo, pode mudar para png
-                    "engine": "office",
-                    "engine_version": "1.0"
-                },
-                "export-my-file": {
-                    "operation": "export/url",
-                    "input": "convert-my-file"
-                }
-            }
-        })
-        print("✅ Job criado:", job)  # Print do job para debug
-        return job
-    except Exception as e:
-        print("❌ Erro ao criar job:", str(e))  # Print de erro
-        return None
-
-# ⚠️ API KEY do CloudConvert
-CLOUDCONVERT_API_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxIiwianRpIjoiZmI2NDBjYmU0YmQ2YWIwZjE2MTQxMzI0NGVmOTI1ODZmOTZlMDRmMDYxMzI2Y2UxODM2NTM1ZTRjZmViNTI0ZDRmNTE1ODMwZmVkMmQzOTkiLCJpYXQiOjE3NDE3OTI0NzUuMzY4MTksIm5iZiI6MTc0MTc5MjQ3NS4zNjgxOTEsImV4cCI6NDg5NzQ2NjA3NS4zNjM0MjQsInN1YiI6IjcxMzEzMTg1Iiwic2NvcGVzIjpbInRhc2sucmVhZCIsInRhc2sud3JpdGUiXX0.PgcpeI7lQk9hegNbtYR4tq7anxEtXhgTWuXv9nBtFtVlxqzKuG_mqUpYLpFyrkJ_UJCy4PLQdVC6r99cWcgwrGdBb9XyduPETjNT4Mf1KId0qPMJaUaiAs32zBvuN_BRSQX2hgZAGITFctHyau_pDvdH5xqwDL1dwAUjM784xhhhurQhirAiNE71TSI_3ce-SU-yX5cZbbqos7_O5ot_U5HR1y5BbeJ1QxzXhcIekQppSner2rjwMQYB8ooCTLAzokFHScwK4QKU8o9SsOKrIzvdTscSROxmI2GEFxjGGilpDmd_6yntBRepnoDersmTKNbemTvhSpPh2Cw6kInqvz3InMOfNVdPyPb0DUP-SG8Seg_z8G9O9ldqy1Gp_-9rT-45govNkjeBdW-ZcNuF950-_bVA1pRriX8vHYJDpta7e8VWF7GOReEh3vnPZtqVOLDDcle5vX193OKkkrxu-TFisgUXl4nFHzefdD8Izx0E4cG2geS3nrd1ipZU9Ff1OkTDMuL0Qgzd1K2oLxRLaB7gtMyi1ElUVxXbBi9GjflJWAC5dIx22fxJ8a1wW4NyIh6UoFYr-s-KLSLpQRvQ9LUZYXChg8XpjMeQysYIQxTOBO_C-Wv4w02ESqRWtlE_sS1MJ4jueRq46DjP0BSRLJDpEuocZKuHj-_O7zZ29gQ'
-
-cloudconvert.configure(api_key=CLOUDCONVERT_API_KEY, sandbox=False)
+# Inicializar CloudConvert
+cloudconvert_api = cloudconvert.Client(api_key=CLOUDCONVERT_API_KEY)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        if 'pdf_file' not in request.files:
-            return redirect(request.url)
-        pdf_file = request.files['pdf_file']
-        if pdf_file.filename == '':
-            return redirect(request.url)
+        file = request.files['file']
+        if file and file.filename.endswith('.pdf'):
+            filename = file.filename
+            upload_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(upload_path)
+            print(f"📁 Ficheiro recebido: {upload_path}")
 
-        temp_dir = tempfile.mkdtemp()
-        input_pdf_path = os.path.join(temp_dir, pdf_file.filename)
-        pdf_file.save(input_pdf_path)
+            # Nome base para a pasta e arquivos
+            base_name = os.path.splitext(filename)[0]
+            output_dir = os.path.join(app.config['UPLOAD_FOLDER'], base_name)
+            os.makedirs(output_dir, exist_ok=True)
 
-        filename_without_ext = os.path.splitext(pdf_file.filename)[0]
-        output_dir = os.path.join(temp_dir, filename_without_ext)
-        os.makedirs(output_dir, exist_ok=True)
+            # Criar Job na CloudConvert
+            print("🚀 A iniciar conversão na CloudConvert...")
+            try:
+                job = cloudconvert_api.jobs.create(payload={
+                    "tasks": {
+                        'import-my-file': {
+                            'operation': 'import/upload'
+                        },
+                        'convert-my-file-png': {
+                            'operation': 'convert',
+                            'input': 'import-my-file',
+                            'output_format': 'png',
+                            'engine': 'office',
+                            'engine_version': 'default'
+                        },
+                        'convert-my-file-jpg': {
+                            'operation': 'convert',
+                            'input': 'import-my-file',
+                            'output_format': 'jpg',
+                            'engine': 'office',
+                            'engine_version': 'default'
+                        },
+                        'export-my-file': {
+                            'operation': 'export/url',
+                            'input': ['convert-my-file-png', 'convert-my-file-jpg'],
+                            'inline': False,
+                            'archive_multiple_files': False
+                        }
+                    }
+                })
 
-        # Converte para PNG
-        job_png = cloudconvert.Job.create(payload={
-            "tasks": {
-                'import-my-file': {
-                    'operation': 'import/upload'
-                },
-                'convert-my-file': {
-                    'operation': 'convert',
-                    'input': 'import-my-file',
-                    'output_format': 'png',
-                    'engine': 'office',
-                    'engine_version': '1.0'
-                },
-                'export-my-file': {
-                    'operation': 'export/url',
-                    'input': 'convert-my-file'
-                }
-            }
-        })
+                print(f"✅ Job criado: {job['id']}")
+                upload_task = job['tasks'][0]
+                upload_url = upload_task['result']['form']['url']
 
-        upload_task_png = job_png['tasks'][0]
-        upload_url_png = upload_task_png['result']['form']['url']
-        cloudconvert.Task.upload(file_name=input_pdf_path, task=upload_task_png)
+                # Fazer upload do ficheiro
+                with open(upload_path, 'rb') as file_data:
+                    cloudconvert_api.tasks.upload(upload_task, file_data)
+                print("✅ Upload para CloudConvert concluído.")
 
-        job_png = cloudconvert.Job.wait(id=job_png['id'])
-        export_task_png = [task for task in job_png['tasks'] if task['name'] == 'export-my-file'][0]
-        file_url_png = export_task_png['result']['files'][0]['url']
+                # Verificar estado do job até estar concluído
+                while True:
+                    job = cloudconvert_api.jobs.get(job['id'])
+                    status = job['status']
+                    print(f"🔄 Status do job: {status}")
+                    if status == 'finished':
+                        break
+                    elif status == 'error':
+                        print("❌ Erro ao processar o ficheiro na CloudConvert.")
+                        return "Erro na conversão", 500
+                    time.sleep(5)
 
-        # Converte para JPG
-        job_jpg = cloudconvert.Job.create(payload={
-            "tasks": {
-                'import-my-file': {
-                    'operation': 'import/upload'
-                },
-                'convert-my-file': {
-                    'operation': 'convert',
-                    'input': 'import-my-file',
-                    'output_format': 'jpg',
-                    'engine': 'office',
-                    'engine_version': '1.0'
-                },
-                'export-my-file': {
-                    'operation': 'export/url',
-                    'input': 'convert-my-file'
-                }
-            }
-        })
+                # Obter URLs dos ficheiros convertidos
+                export_task = next(task for task in job['tasks'] if task['name'] == 'export-my-file')
+                files = export_task['result']['files']
+                print(f"📤 Ficheiros convertidos: {[file['filename'] for file in files]}")
 
-        upload_task_jpg = job_jpg['tasks'][0]
-        upload_url_jpg = upload_task_jpg['result']['form']['url']
-        cloudconvert.Task.upload(file_name=input_pdf_path, task=upload_task_jpg)
+                # Fazer download dos ficheiros convertidos
+                for file_info in files:
+                    file_url = file_info['url']
+                    output_path = os.path.join(output_dir, file_info['filename'])
+                    os.system(f"curl -L {file_url} -o {output_path}")
+                    print(f"⬇️  Ficheiro descarregado: {output_path}")
 
-        job_jpg = cloudconvert.Job.wait(id=job_jpg['id'])
-        export_task_jpg = [task for task in job_jpg['tasks'] if task['name'] == 'export-my-file'][0]
-        file_url_jpg = export_task_jpg['result']['files'][0]['url']
+                # Retornar um dos ficheiros como exemplo
+                return send_file(output_path, as_attachment=True)
 
-        shutil.rmtree(temp_dir)
-        
-        return render_template('index.html', file_url_png=file_url_png, file_url_jpg=file_url_jpg)
+            except Exception as e:
+                print(f"❌ Erro na integração com CloudConvert: {e}")
+                return "Erro ao processar o ficheiro", 500
 
     return render_template('index.html')
 
-
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

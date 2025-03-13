@@ -4,11 +4,11 @@ from flask import Flask, request, render_template, redirect, url_for
 
 app = Flask(__name__)
 
-# API Key diretamente no código (como pediste!)
-API_KEY = "sk_live_0e0C***************"  # <-- tua key real aqui
+# API Key DIRETO no código (como pediste)
+API_KEY = "sk_live_0e0C***************"
 
-# Inicializar API
-cloudconvert_api = cloudconvert.Api(API_KEY)
+# Inicializar a API (correto com a lib v2.0.0)
+cloudconvert_api = cloudconvert.Api(api_key=API_KEY)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -19,7 +19,7 @@ def index():
         if file.filename == '':
             return 'No selected file'
         
-        # Criação do job CloudConvert
+        # Criar o Job no CloudConvert
         job = cloudconvert_api.jobs.create(payload={
             "tasks": {
                 'import-my-file': {
@@ -30,7 +30,7 @@ def index():
                     'input': 'import-my-file',
                     'input_format': 'pdf',
                     'output_format': 'png',
-                    "page_range": "1",  # Apenas a primeira página (ajustável)
+                    "page_range": "1",  # Primeira página (ajustável)
                     "engine": "poppler"
                 },
                 'export-my-file': {
@@ -42,15 +42,15 @@ def index():
             }
         })
 
-        # Obter o URL de upload
+        # Obter o link de upload
         upload_task = job['tasks'][0]
         upload_url = upload_task['result']['form']['url']
 
-        # Fazer upload do ficheiro para CloudConvert
+        # Upload do ficheiro
         with file.stream as file_stream:
             cloudconvert_api.tasks.upload(upload_task, file_stream)
 
-        return 'Conversão iniciada com sucesso! Verifica o CloudConvert Jobs.'
+        return 'Conversão iniciada com sucesso! Verifica o painel CloudConvert.'
 
     return render_template('index.html')
 

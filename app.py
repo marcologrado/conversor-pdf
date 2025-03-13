@@ -1,85 +1,68 @@
 from flask import Flask, render_template, request, send_file
 import os
 import cloudconvert
-from dotenv import load_dotenv
-import requests
-import time
-
-load_dotenv()
+import requests  # Não esquecer de ter o requests no requirements.txt
 
 app = Flask(__name__)
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# API Key correta
-API_KEY = "aJq3n2wVZ0hRzB0vFJk9fjVnL0N0z5aM4PZ5Yg3H0gC7i4X0R2E6M2F7g0k2d4X0"
+# ✅ AQUI ESTÁ A API KEY DIRETA:
+API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI2NmYxZDU0Yy1jZjc4LTQ1MzMtYjE1My1hYzRkZTRlMTRjOTciLCJqdGkiOiI2NzFiZGE0Mi03ZThmLTRhNWItOGI4ZS02NzBiZjhkYjVhZWQiLCJpc3MiOiJjbG91ZGNvbnZlcnQuYXBpIiwiaWF0IjoxNzA5NjM0NjE2fQ.TQj04TwBMG8Kcr3YltpMHydqvm8yqPU9hSn8ZW_Mt2E'
+cloudconvert.configure(api_key=API_KEY)
 
-cloudconvert_api = cloudconvert.Client(API_KEY)
-
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    if request.method == 'POST':
-        if 'pdf_file' not in request.files:
-            return "No file part", 400
-        file = request.files['pdf_file']
-        if file.filename == '':
-            return "No selected file", 400
-        if file:
-            filename = file.filename
-            filepath = os.path.join('/tmp', filename)
-            file.save(filepath)
-
-            print(f"📥 PDF recebido: {filename}")
-
-            try:
-                print("🚀 A criar job na CloudConvert...")
-                job = cloudconvert_api.jobs.create(payload={
-                    "tasks": {
-                        'import-my-file': {
-                            'operation': 'import/upload'
-                        },
-                        'convert-my-file': {
-                            'operation': 'convert',
-                            'input': 'import-my-file',
-                            'output_format': 'jpg'
-                        },
-                        'export-my-file': {
-                            'operation': 'export/url',
-                            'input': 'convert-my-file'
-                        }
-                    }
-                })
-
-                print(f"✅ Job criado: {job['id']}")
-
-                upload_task = job['tasks'][0]
-                upload_url = upload_task['result']['form']['url']
-                upload_params = upload_task['result']['form']['parameters']
-
-                with open(filepath, 'rb') as f:
-                    files = {'file': (filename, f)}
-                    response = requests.post(upload_url, data=upload_params, files=files)
-                    print(f"📤 Upload do ficheiro: {response.status_code}")
-
-                print("⏳ A aguardar processamento do job...")
-                job = cloudconvert_api.jobs.wait(id=job['id'])  # Esperar até o job acabar
-                print(f"✅ Job finalizado: {job['status']}")
-
-                export_task = [task for task in job['tasks'] if task['name'] == 'export-my-file'][0]
-                file_url = export_task['result']['files'][0]['url']
-                print(f"🔗 Link para download: {file_url}")
-
-                output_path = os.path.join('/tmp', f"{os.path.splitext(filename)[0]}.jpg")
-                r = requests.get(file_url, allow_redirects=True)
-                with open(output_path, 'wb') as f:
-                    f.write(r.content)
-                print(f"✅ Ficheiro convertido e guardado: {output_path}")
-
-                return send_file(output_path, as_attachment=True)
-
-            except Exception as e:
-                print(f"❌ Erro ao converter: {str(e)}")
-                return f"Erro ao converter: {str(e)}", 500
-
     return render_template('index.html')
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return 'No file part', 400
+    file = request.files['file']
+    if file.filename == '':
+        return 'No selected file', 400
+
+    filename = file.filename
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(file_path)
+
+    # ✅ Criação do job na CloudConvert
+    job = cloudconvert.Job.create(payload={
+        "tasks": {
+            'import-my-file': {
+                'operation': 'import/upload'
+            },
+            'convert-my-file': {
+                'operation': 'convert',
+                'input': 'import-my-file',
+                'input_format': 'pdf',
+                'output_format': 'jpg',
+                'engine': 'office',  # ou 'imagem' se quiser testar outro
+                'engine_version': '1.0'
+            },
+            'export-my-file': {
+                'operation': 'export/url',
+                'input': 'convert-my-file'
+            }
+        }
+    })
+
+    # ✅ Pega ID da tarefa de upload
+    import_task_id = job['tasks'][0]['id']
+    upload_task = cloudconvert.Task.find(id=import_task_id)
+
+    # ✅ URL para upload
+    upload_url = upload_task['result']['form']['url']
+    upload_parameters = upload_task['result']['form']['parameters']
+
+    # ✅ Upload do PDF
+    with open(file_path, 'rb') as file_data:
+        response = requests.post(upload_url, data=upload_parameters, files={'file': file_data})
+        print('Upload Response:', response.status_code, response.text)
+
+    return 'File uploaded and conversion started! Check your CloudConvert dashboard.'
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))

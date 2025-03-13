@@ -4,11 +4,11 @@ from flask import Flask, request, render_template, redirect, url_for
 
 app = Flask(__name__)
 
-# API Key DIRETO no código (como pediste)
+# API KEY DIRETA
 API_KEY = "sk_live_0e0C***************"
 
-# Inicializar a API (correto com a lib v2.0.0)
-cloudconvert_api = cloudconvert.Api(api_key=API_KEY)
+# Instanciar cliente correto
+cloudconvert_api = cloudconvert.Client(api_key=API_KEY)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -18,7 +18,7 @@ def index():
         file = request.files['pdf_file']
         if file.filename == '':
             return 'No selected file'
-        
+
         # Criar o Job no CloudConvert
         job = cloudconvert_api.jobs.create(payload={
             "tasks": {
@@ -30,7 +30,7 @@ def index():
                     'input': 'import-my-file',
                     'input_format': 'pdf',
                     'output_format': 'png',
-                    "page_range": "1",  # Primeira página (ajustável)
+                    "page_range": "1",
                     "engine": "poppler"
                 },
                 'export-my-file': {
@@ -50,7 +50,7 @@ def index():
         with file.stream as file_stream:
             cloudconvert_api.tasks.upload(upload_task, file_stream)
 
-        return 'Conversão iniciada com sucesso! Verifica o painel CloudConvert.'
+        return 'Conversão iniciada com sucesso! Verifica o painel do CloudConvert.'
 
     return render_template('index.html')
 

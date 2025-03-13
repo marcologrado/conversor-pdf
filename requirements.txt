@@ -1,5 +1,5 @@
 Flask
 gunicorn
-cloudconvert==2.0.0
+cloudconvert>=2.0.0,<3.0.0
 python-dotenv
 requests

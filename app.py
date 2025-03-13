@@ -1,100 +1,85 @@
-import os
 from flask import Flask, render_template, request, send_file
+import os
 import cloudconvert
 from dotenv import load_dotenv
 import requests
 import time
 
-# 🔑 Chave da API (substituída aqui como pediste)
-API_KEY = "q6xLk8tKcCzq7Q3rTfP9wG4vWbBVZ7Fh4gTlfqfvlNY0NDbJ6eFyOSzIRjfpT9P1"
-
-# Inicializar o cliente CloudConvert
-api = cloudconvert.Client(api_key=API_KEY)
+load_dotenv()
 
 app = Flask(__name__)
 
-@app.route('/')
+# API Key correta
+API_KEY = "aJq3n2wVZ0hRzB0vFJk9fjVnL0N0z5aM4PZ5Yg3H0gC7i4X0R2E6M2F7g0k2d4X0"
+
+cloudconvert_api = cloudconvert.Client(API_KEY)
+
+@app.route('/', methods=['GET', 'POST'])
 def index():
+    if request.method == 'POST':
+        if 'pdf_file' not in request.files:
+            return "No file part", 400
+        file = request.files['pdf_file']
+        if file.filename == '':
+            return "No selected file", 400
+        if file:
+            filename = file.filename
+            filepath = os.path.join('/tmp', filename)
+            file.save(filepath)
+
+            print(f"📥 PDF recebido: {filename}")
+
+            try:
+                print("🚀 A criar job na CloudConvert...")
+                job = cloudconvert_api.jobs.create(payload={
+                    "tasks": {
+                        'import-my-file': {
+                            'operation': 'import/upload'
+                        },
+                        'convert-my-file': {
+                            'operation': 'convert',
+                            'input': 'import-my-file',
+                            'output_format': 'jpg'
+                        },
+                        'export-my-file': {
+                            'operation': 'export/url',
+                            'input': 'convert-my-file'
+                        }
+                    }
+                })
+
+                print(f"✅ Job criado: {job['id']}")
+
+                upload_task = job['tasks'][0]
+                upload_url = upload_task['result']['form']['url']
+                upload_params = upload_task['result']['form']['parameters']
+
+                with open(filepath, 'rb') as f:
+                    files = {'file': (filename, f)}
+                    response = requests.post(upload_url, data=upload_params, files=files)
+                    print(f"📤 Upload do ficheiro: {response.status_code}")
+
+                print("⏳ A aguardar processamento do job...")
+                job = cloudconvert_api.jobs.wait(id=job['id'])  # Esperar até o job acabar
+                print(f"✅ Job finalizado: {job['status']}")
+
+                export_task = [task for task in job['tasks'] if task['name'] == 'export-my-file'][0]
+                file_url = export_task['result']['files'][0]['url']
+                print(f"🔗 Link para download: {file_url}")
+
+                output_path = os.path.join('/tmp', f"{os.path.splitext(filename)[0]}.jpg")
+                r = requests.get(file_url, allow_redirects=True)
+                with open(output_path, 'wb') as f:
+                    f.write(r.content)
+                print(f"✅ Ficheiro convertido e guardado: {output_path}")
+
+                return send_file(output_path, as_attachment=True)
+
+            except Exception as e:
+                print(f"❌ Erro ao converter: {str(e)}")
+                return f"Erro ao converter: {str(e)}", 500
+
     return render_template('index.html')
 
-@app.route('/', methods=['POST'])
-def upload_file():
-    if 'pdf_file' not in request.files:
-        return 'No file part'
-
-    file = request.files['pdf_file']
-
-    if file.filename == '':
-        return 'No selected file'
-
-    if file:
-        filename = file.filename
-        basename = os.path.splitext(filename)[0]  # "001.pdf" -> "001"
-
-        # Guardar o ficheiro temporariamente
-        input_path = f"uploads/{filename}"
-        output_folder = f"uploads/{basename}"
-        os.makedirs(output_folder, exist_ok=True)
-        file.save(input_path)
-
-        # Criar o job na CloudConvert
-        job = api.jobs.create(payload={
-            "tasks": {
-                'import-1': {
-                    'operation': 'import/upload'
-                },
-                'convert-1-png': {
-                    'operation': 'convert',
-                    'input': 'import-1',
-                    'output_format': 'png'
-                },
-                'convert-2-jpg': {
-                    'operation': 'convert',
-                    'input': 'import-1',
-                    'output_format': 'jpg'
-                },
-                'export-1': {
-                    'operation': 'export/url',
-                    'input': ['convert-1-png', 'convert-2-jpg'],
-                    'inline': False,
-                    'archive_multiple_files': True
-                }
-            }
-        })
-
-        # Obter URL de upload
-        upload_task = job['tasks'][0]  # import-1
-        upload_url = upload_task['result']['form']['url']
-        upload_parameters = upload_task['result']['form']['parameters']
-
-        # Fazer o upload do ficheiro para o URL indicado
-        with open(input_path, 'rb') as f:
-            files = {'file': (filename, f)}
-            response = requests.post(upload_url, data=upload_parameters, files=files)
-            response.raise_for_status()
-
-        # Aguardar a conclusão
-        job_id = job['id']
-        while True:
-            job_status = api.jobs.get(job_id)
-            if job_status['status'] == 'finished':
-                break
-            elif job_status['status'] == 'error':
-                return 'Erro no processamento do ficheiro.'
-            time.sleep(3)  # Espera 3 segundos antes de verificar novamente
-
-        # Obter o link do ficheiro zip final
-        export_task = next(task for task in job_status['tasks'] if task['name'] == 'export-1')
-        file_url = export_task['result']['files'][0]['url']
-
-        # Fazer o download do ficheiro zip
-        output_zip_path = os.path.join(output_folder, f"{basename}.zip")
-        r = requests.get(file_url)
-        with open(output_zip_path, 'wb') as f:
-            f.write(r.content)
-
-        # Retornar o ZIP ao utilizador
-        return send_file(output_zip_path, as_attachment=True, download_name=f"{basename}.zip")
-
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, send_file
+from flask import Flask, render_template, request
 import os
 import cloudconvert
 import requests
@@ -24,38 +24,49 @@ def upload_file():
 
     # Salvar temporariamente o arquivo
     input_filepath = os.path.join('uploads', file.filename)
-    output_filepath = os.path.join('converted', file.filename + '.png')
+    os.makedirs('uploads', exist_ok=True)
     file.save(input_filepath)
 
-    # Criar job na CloudConvert
-    job = cloudconvert.Job.create(payload={
-        "tasks": {
-            'import-1': {
-                'operation': 'import/upload'
-            },
-            'convert-1': {
-                'operation': 'convert',
-                'input': 'import-1',
-                'output_format': 'png'
-            },
-            'export-1': {
-                'operation': 'export/url',
-                'input': 'convert-1'
+    try:
+        # Criar job na CloudConvert
+        job = cloudconvert.Job.create(payload={
+            "tasks": {
+                'import-my-file': {
+                    'operation': 'import/upload'
+                },
+                'convert-my-file': {
+                    'operation': 'convert',
+                    'input': 'import-my-file',
+                    'output_format': 'png'
+                },
+                'export-my-file': {
+                    'operation': 'export/url',
+                    'input': 'convert-my-file'
+                }
             }
-        }
-    })
+        })
 
-    upload_task = next(task for task in job['tasks'] if task['name'] == 'import-1')
+        # Obter tarefa de upload
+        upload_task = next(task for task in job['tasks'] if task['name'] == 'import-my-file')
 
-    # Upload do arquivo
-    upload_url = upload_task['result']['form']['url']
-    form_data = upload_task['result']['form']['parameters']
-    with open(input_filepath, 'rb') as f:
-        form_data['file'] = (file.filename, f)
-        response = requests.post(upload_url, files=form_data)
-        print('Upload response:', response.status_code, response.text)
+        # Preparar upload correto
+        upload_url = upload_task['result']['form']['url']
+        form_data = upload_task['result']['form']['parameters']
 
-    return 'Arquivo enviado para conversão!'
+        with open(input_filepath, 'rb') as f:
+            files = {'file': (file.filename, f)}
+            response = requests.post(upload_url, data=form_data, files=files)
+
+        print("⚙️ Upload response:", response.status_code, response.text)  # Log para debug
+
+        if response.status_code == 201 or response.status_code == 200:
+            return 'Arquivo enviado e conversão iniciada com sucesso!'
+        else:
+            return f'Erro no upload do arquivo! {response.status_code} - {response.text}'
+
+    except Exception as e:
+        print(f"❌ Erro no processo: {e}")
+        return f'Erro: {e}'
 
 if __name__ == '__main__':
     app.run(debug=True)

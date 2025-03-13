@@ -1,5 +1,5 @@
 Flask
 gunicorn
-cloudconvert-rest
-Pillow
+cloudconvert
+python-dotenv
 requests
